@@ -10,20 +10,7 @@
 #include <fstream>
 
 #include <k4a/k4a.hpp>
-#include <opencv2/calib3d.hpp>
-#include <opencv2/core.hpp>
-#include <opencv2/imgproc.hpp>
-#include <opencv2/highgui.hpp>
-#include <opencv2/opencv.hpp>
-
 #include <time.h>
-
-
-// 2023-10-20-杨明佳
-#include <chrono>
-
-
-
 
 using std::cerr;
 using std::cout;
@@ -37,25 +24,29 @@ using std::vector;
 // Allowing at least 160 microseconds between depth cameras should ensure they do not interfere with one another.
 constexpr uint32_t MIN_TIME_BETWEEN_DEPTH_CAMERA_PICTURES_USEC = 160;
 
-// ideally, we could generalize this to many OpenCV types
-static cv::Mat color_to_opencv(const k4a::image& im);
-static cv::Mat depth_to_opencv(const k4a::image& im);
-static Transformation get_depth_to_color_transformation_from_calibration(const k4a::calibration& cal);
-
 static k4a_device_configuration_t get_master_config();
 static k4a_device_configuration_t get_subordinate_config();
 
-static k4a::image create_depth_image_like(const k4a::image& im);
+// 合并保存函数
+struct PointCloudData {
+    k4a_transformation_t transformation_handle;
+    k4a::image depth_image;
+    k4a::image color_image;
+    std::string file_name;
+    std::string matrix_file;
+    int count;
+};
 
-// 修改部分
-void save_point_cloud_new(k4a_transformation_t transformation_handle,
-    k4a::image depth_image,
-    k4a::image color_image,
-    //int count,
-    //std::string matrix);
-//以下是点播
-    std::string file_name,
-    std::string matrix);
+void save_point_cloud_new(std::vector<PointCloudData>& point_clouds);
+
+//void save_point_cloud_new(k4a_transformation_t transformation_handle,
+//    k4a::image depth_image,
+//    k4a::image color_image,
+//    //int count,
+//    //std::string matrix);
+////以下是点播
+//    std::string file_name,
+//    std::string matrix);
 
 k4a_transformation_t transformation_handle_main = NULL;
 k4a_transformation_t transformation_handle_second = NULL;
@@ -69,7 +60,7 @@ int main(int argc, char** argv)
     int32_t powerline_freq = 2;          // 源频率，默认为60Hz
     cv::Size chessboard_pattern(8, 13);  // 棋盘格的尺寸，高度和宽度都需要设置
     uint16_t depth_threshold = 1000;     // 深度阈值，默认为1米
-    size_t num_devices = 3;              // 设备数量，默认为2台
+    size_t num_devices = 2;              // 设备数量，默认为2台
     double calibration_timeout = 120.0;  // 校准超时时间，默认为120秒（2分钟）
     double greenscreen_duration = std::numeric_limits<double>::max(); // 绿幕持续时间，默认为无限大，一直运行
 
@@ -179,18 +170,17 @@ int main(int argc, char** argv)
             k4a::image main_color_image = captures[0].get_color_image();
             k4a::image main_depth_image = captures[0].get_depth_image();
 
-            // 将主深度图像转换到主彩色相机空间中
-            k4a::image main_depth_in_main_color = create_depth_image_like(main_color_image);
-            main_depth_to_main_color.depth_image_to_color_camera(main_depth_image, &main_depth_in_main_color);
-            cv::Mat cv_main_depth_in_main_color = depth_to_opencv(main_depth_in_main_color);
-            cv::Mat cv_main_color_image = color_to_opencv(main_color_image);
-
             // 保存点云文件
             std::string filename = outputDirectory0 + "\\" + std::to_string(count) + ".ply";
             auto time_1 = std::chrono::high_resolution_clock::now();
 
+            std::vector<PointCloudData> point_clouds;
+
+            // 填充 point_clouds 数组
+            point_clouds.push_back({ transformation_handle_main, main_depth_image, main_color_image, filename, ""});
+
             // 点播
-            save_point_cloud_new(transformation_handle_main, main_depth_image, main_color_image, filename, NULL);
+            save_point_cloud_new(point_clouds);
 
             //直播
             //save_point_cloud_new(transformation_handle_main, main_depth_image, main_color_image, count);
@@ -214,36 +204,25 @@ int main(int argc, char** argv)
             capturer.get_subordinate_device_by_index(0).get_calibration(secondary_config.depth_mode,
                 secondary_config.color_resolution);
 
-        // 获取从次级深度到次级彩色的变换矩阵
-        Transformation tr_secondary_depth_to_secondary_color = get_depth_to_color_transformation_from_calibration(
-            secondary_calibration);
+        transformation_handle_main = k4a_transformation_create(&main_calibration);
+        transformation_handle_second = k4a_transformation_create(&secondary_calibration);
 
         std::chrono::time_point<std::chrono::system_clock> start_time = std::chrono::system_clock::now();
-        transformation_handle_main = k4a_transformation_create(&main_calibration);
+
         int count = 0;
         // 在一定时间内进行处理
         while (std::chrono::duration<double>(std::chrono::system_clock::now() - start_time).count() <
             greenscreen_duration)
         {
-            transformation_handle_second = k4a_transformation_create(&secondary_calibration);
-
             // pointcloud 定义输出点云文件的目录
-            std::string outputDirectory0 = "pointcloud/capture0";
-            std::string outputDirectory1 = "pointcloud/capture1";
+            std::string outputDirectory0 = "pointcloud/capture";
 
             // 获取同步的捕获帧
-            vector<k4a::capture> captures;
-            captures = capturer.get_synchronized_captures(secondary_config, true);
+            vector<k4a::capture> captures = capturer.get_synchronized_captures(secondary_config, true);
 
             // 获取主彩色图像和主深度图像
             k4a::image main_color_image = captures[0].get_color_image();
             k4a::image main_depth_image = captures[0].get_depth_image();
-
-            // 将主深度图像转换到主彩色相机空间中
-            k4a::image main_depth_in_main_color = create_depth_image_like(main_color_image);
-            main_depth_to_main_color.depth_image_to_color_camera(main_depth_image, &main_depth_in_main_color);
-            cv::Mat cv_main_depth_in_main_color = depth_to_opencv(main_depth_in_main_color);
-            cv::Mat cv_main_color_image = color_to_opencv(main_color_image);
 
             // 获取次级深度图像 和次级彩色图像
             k4a::image secondary_depth_image = captures[1].get_depth_image();
@@ -251,25 +230,32 @@ int main(int argc, char** argv)
 
             // 保存点云文件
             std::string filename0 = outputDirectory0 + "\\" + std::to_string(count) + ".ply";
-            std::string filename1 = outputDirectory1 + "\\" + std::to_string(count) + ".ply";
 
             // 配准矩阵
             std::string matrix1 = "D:\\Code\\kinect\\pointcloud\\capture2\\2to0_matrix.txt";
 
-            auto time_1 = std::chrono::high_resolution_clock::now();
-            save_point_cloud_new(transformation_handle_main, main_depth_image, main_color_image, filename0, ""); //空字符串
-            auto time_2 = std::chrono::high_resolution_clock::now();
-            save_point_cloud_new(transformation_handle_second, secondary_depth_image, secondary_color_image, filename1, matrix1);
-            auto time_3 = std::chrono::high_resolution_clock::now();
+            // 合并保存
+            std::vector<PointCloudData> point_clouds;
 
-            auto duration_1 = std::chrono::duration_cast<std::chrono::microseconds>(time_2 - time_1);
-            auto duration_2 = std::chrono::duration_cast<std::chrono::microseconds>(time_3 - time_2);
+            // push back不花时间
+            // 填充 point_clouds 数组
+            point_clouds.push_back({ transformation_handle_main, main_depth_image, main_color_image, filename0, "" });
+            point_clouds.push_back({ transformation_handle_second, secondary_depth_image, secondary_color_image, filename0, matrix1 });
+           
+            auto start_time = std::chrono::high_resolution_clock::now();
 
-            std::cout << "第一次保存使用的秒数" << duration_1.count() * 1.0 / 1000000 << endl;
-            std::cout << "第二次保存使用的秒数" << duration_2.count() * 1.0 / 1000000 << endl;
+            save_point_cloud_new(point_clouds);
+
+            // 记录结束时间点
+            auto end_time = std::chrono::high_resolution_clock::now();      
+    
+            // 计算执行时间
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+    
+            // 打印执行时间（以毫秒为单位）
+            std::cout << "一次save函数时间：" << duration.count() << " 毫秒" << std::endl;
             count++;
 
-            break;
         }
     }
     else if (num_devices == 3)
@@ -284,19 +270,12 @@ int main(int argc, char** argv)
             capturer.get_subordinate_device_by_index(1).get_calibration(secondary_config.depth_mode,
                 secondary_config.color_resolution);
 
-        transformation_handle_second_1 = k4a_transformation_create(&secondary_calibration_1);
-        transformation_handle_second_2 = k4a_transformation_create(&secondary_calibration_2);
-
-        // 获取从次级深度到次级彩色的变换矩阵
-        Transformation tr_secondary_depth_to_secondary_color_1 = get_depth_to_color_transformation_from_calibration(
-            secondary_calibration_1);
-        Transformation tr_secondary_depth_to_secondary_color_2 = get_depth_to_color_transformation_from_calibration(
-            secondary_calibration_2);
-
-        std::chrono::time_point<std::chrono::system_clock> start_time = std::chrono::system_clock::now();
         transformation_handle_main = k4a_transformation_create(&main_calibration);
         transformation_handle_second_1 = k4a_transformation_create(&secondary_calibration_1);
         transformation_handle_second_2 = k4a_transformation_create(&secondary_calibration_2);
+
+        std::chrono::time_point<std::chrono::system_clock> start_time = std::chrono::system_clock::now();
+
         // 在一定时间内进行处理
         while (std::chrono::duration<double>(std::chrono::system_clock::now() - start_time).count() <
             greenscreen_duration)
@@ -316,12 +295,6 @@ int main(int argc, char** argv)
             k4a::image main_color_image = captures[0].get_color_image();
             k4a::image main_depth_image = captures[0].get_depth_image();
 
-            // 将主深度图像转换到主彩色相机空间中
-            k4a::image main_depth_in_main_color = create_depth_image_like(main_color_image);
-            main_depth_to_main_color.depth_image_to_color_camera(main_depth_image, &main_depth_in_main_color);
-            cv::Mat cv_main_depth_in_main_color = depth_to_opencv(main_depth_in_main_color);
-            cv::Mat cv_main_color_image = color_to_opencv(main_color_image);
-
             // 获取从属1深度图像和从属1彩色图像
             k4a::image secondary_depth_image_1 = captures[1].get_depth_image();
             k4a::image secondary_color_image_1 = captures[1].get_color_image();
@@ -339,9 +312,14 @@ int main(int argc, char** argv)
             std::string matrix1 = "D:\\Code\\kinect\\pointcloud\\capture1\\1to0_matrix.txt";
             std::string matrix2 = "D:\\Code\\kinect\\pointcloud\\capture2\\2to0_matrix.txt";
 
-            save_point_cloud_new(transformation_handle_main, main_depth_image, main_color_image, filename0, ""); //空字符串
-            save_point_cloud_new(transformation_handle_second_1, secondary_depth_image_1, secondary_color_image_1, filename1, matrix1);
-            save_point_cloud_new(transformation_handle_second_2, secondary_depth_image_2, secondary_color_image_2, filename2, matrix2);
+            std::vector<PointCloudData> point_clouds;
+
+            // 填充 point_clouds 数组
+            point_clouds.push_back({ transformation_handle_main, main_depth_image, main_color_image, filename0, "" });
+            point_clouds.push_back({ transformation_handle_main, main_depth_image, main_color_image, filename0, matrix1 });
+            point_clouds.push_back({ transformation_handle_main, main_depth_image, main_color_image, filename0, matrix2 });
+
+            save_point_cloud_new(point_clouds); //空字符串
             count++;
             //break;
 
@@ -359,50 +337,6 @@ int main(int argc, char** argv)
         exit(1);
     }
     return 0;
-}
-
-// 将K4A图像转换为OpenCV的Mat格式（彩色图像）
-static cv::Mat color_to_opencv(const k4a::image& im)
-{
-    // 创建一个带有alpha通道的CV_8UC4类型Mat
-    cv::Mat cv_image_with_alpha(im.get_height_pixels(), im.get_width_pixels(), CV_8UC4, (void*)im.get_buffer());
-
-    // 创建一个没有alpha通道的CV_8UC3类型Mat
-    cv::Mat cv_image_no_alpha;
-    cv::cvtColor(cv_image_with_alpha, cv_image_no_alpha, cv::COLOR_BGRA2BGR);
-
-    return cv_image_no_alpha; // 返回没有alpha通道的Mat
-}
-
-// 将K4A图像转换为OpenCV的Mat格式（深度图像）
-static cv::Mat depth_to_opencv(const k4a::image& im)
-{
-    // 创建一个CV_16U类型的Mat，即16位无符号整数
-    return cv::Mat(im.get_height_pixels(),
-        im.get_width_pixels(),
-        CV_16U,
-        (void*)im.get_buffer(),
-        static_cast<size_t>(im.get_stride_bytes()));
-}
-
-// 从K4A校准数据中获取从深度相机到彩色相机的变换矩阵
-static Transformation get_depth_to_color_transformation_from_calibration(const k4a::calibration& cal)
-{
-    // 获取深度相机到彩色相机的外参
-    const k4a_calibration_extrinsics_t& ex = cal.extrinsics[K4A_CALIBRATION_TYPE_DEPTH][K4A_CALIBRATION_TYPE_COLOR];
-
-    // 构建变换矩阵
-    Transformation tr;
-    for (int i = 0; i < 3; ++i)
-    {
-        for (int j = 0; j < 3; ++j)
-        {
-            tr.R(i, j) = ex.rotation[i * 3 + j];
-        }
-    }
-    tr.t = cv::Vec3d(ex.translation[0], ex.translation[1], ex.translation[2]);
-
-    return tr; // 返回变换矩阵
 }
 
 static k4a_device_configuration_t get_default_config()
@@ -448,91 +382,143 @@ static k4a_device_configuration_t get_subordinate_config()
     return camera_config;
 }
 
-static k4a::image create_depth_image_like(const k4a::image& im)
-{
-    return k4a::image::create(K4A_IMAGE_FORMAT_DEPTH16,
-        im.get_width_pixels(),
-        im.get_height_pixels(),
-        im.get_width_pixels() * static_cast<int>(sizeof(uint16_t)));
+void save_point_cloud_new(std::vector<PointCloudData>& point_clouds) {
+
+    std::vector<WritePointCloudData> WritePCD;
+
+    for (auto& pcd : point_clouds) { // PointCloudData
+        k4a_image_t color_image = pcd.color_image.handle(); // handle用于类型转换
+        k4a_image_t depth_image = pcd.depth_image.handle();
+
+        // 获取彩色图像的宽度和高度
+        int color_image_width_pixels = k4a_image_get_width_pixels(color_image);
+        int color_image_height_pixels = k4a_image_get_height_pixels(color_image);
+
+        // 创建用于保存转换后深度图像的图像对象
+        k4a_image_t transformed_depth_image = NULL;
+        if (K4A_RESULT_SUCCEEDED != k4a_image_create(K4A_IMAGE_FORMAT_DEPTH16,
+            color_image_width_pixels,
+            color_image_height_pixels,
+            color_image_width_pixels * (int)sizeof(uint16_t),
+            &transformed_depth_image))
+        {
+            printf("Failed to create transformed depth image\n");
+        }
+
+        // 创建用于保存点云数据的图像对象
+        k4a_image_t point_cloud_image = NULL;
+        if (K4A_RESULT_SUCCEEDED != k4a_image_create(K4A_IMAGE_FORMAT_CUSTOM,
+            color_image_width_pixels,
+            color_image_height_pixels,
+            color_image_width_pixels * 3 * (int)sizeof(int16_t),
+            &point_cloud_image))
+        {
+            printf("Failed to create point cloud image\n");
+        }
+
+        // 将深度图像转换为与彩色图像对齐的深度图像
+        if (K4A_RESULT_SUCCEEDED !=
+            k4a_transformation_depth_image_to_color_camera(pcd.transformation_handle, depth_image, transformed_depth_image))
+        {
+            printf("Failed to compute transformed depth image\n");
+        }
+
+        // 使用转换后的深度图像计算点云数据，校准类型为彩色图像
+        if (K4A_RESULT_SUCCEEDED != k4a_transformation_depth_image_to_point_cloud(pcd.transformation_handle,
+            transformed_depth_image,
+            K4A_CALIBRATION_TYPE_COLOR,
+            point_cloud_image))
+        {
+            printf("Failed to compute point cloud\n");
+        }
+
+        // 填充 WritePCD 数组
+        WritePCD.push_back({ point_cloud_image, color_image, pcd.file_name.c_str(), 1000, 1.0, pcd.matrix_file });
+    }
+    
+    tranformation_helpers_write_point_cloud(WritePCD);
+
 }
 
-void save_point_cloud_new(k4a_transformation_t transformation_handle,
-    k4a::image depth_image1,
-    k4a::image color_image1,
-    //int count,
-    //std::string matrix)
-    // 点播的话把上面那一行去掉
-    std::string file_name,
-    std::string matrix)
-{
-    auto time1 = std::chrono::high_resolution_clock::now();
-    //std::string file_name = output_dir + "\\depth_to_color.ply";
-    //std::cout << file_name << std::endl;
-    //将k4a::image转换到k4a_image_t
-    k4a_image_t color_image;
-    k4a_image_t depth_image;
-    color_image = color_image1.handle();
-    depth_image = depth_image1.handle();
-    cout << "save_point_cloud_new" << endl;
-    std::cout << "matrix is: " << matrix << std::endl;
 
-    // transform color image into depth camera geometry
-    // 获取彩色图像的宽度和高度
-    int color_image_width_pixels = k4a_image_get_width_pixels(color_image);
-    int color_image_height_pixels = k4a_image_get_height_pixels(color_image);
 
-    // 创建用于保存转换后深度图像的图像对象
-    k4a_image_t transformed_depth_image = NULL;
-    if (K4A_RESULT_SUCCEEDED != k4a_image_create(K4A_IMAGE_FORMAT_DEPTH16,
-        color_image_width_pixels,
-        color_image_height_pixels,
-        color_image_width_pixels * (int)sizeof(uint16_t),
-        &transformed_depth_image))
-    {
-        printf("Failed to create transformed depth image\n");
-    }
-
-    // 创建用于保存点云数据的图像对象
-    k4a_image_t point_cloud_image = NULL;
-    if (K4A_RESULT_SUCCEEDED != k4a_image_create(K4A_IMAGE_FORMAT_CUSTOM,
-        color_image_width_pixels,
-        color_image_height_pixels,
-        color_image_width_pixels * 3 * (int)sizeof(int16_t),
-        &point_cloud_image))
-    {
-        printf("Failed to create point cloud image\n");
-    }
-
-    // 将深度图像转换为与彩色图像对齐的深度图像
-    if (K4A_RESULT_SUCCEEDED !=
-        k4a_transformation_depth_image_to_color_camera(transformation_handle, depth_image, transformed_depth_image))
-    {
-        printf("Failed to compute transformed depth image\n");
-    }
-
-    // 使用转换后的深度图像计算点云数据，校准类型为彩色图像
-    if (K4A_RESULT_SUCCEEDED != k4a_transformation_depth_image_to_point_cloud(transformation_handle,
-        transformed_depth_image,
-        K4A_CALIBRATION_TYPE_COLOR,
-        point_cloud_image))
-    {
-        printf("Failed to compute point cloud\n");
-    }
-    auto time2 = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(time2 - time1);
-    cout << "图像处理所用的时间（s）" << duration.count() * 1.0 / 1000000 << endl;
-
-    // 将点云数据和彩色图像保存到文件中
-    // 点播 
-    tranformation_helpers_write_point_cloud(point_cloud_image, color_image, file_name.c_str(), 1000, 1.0, matrix);
-    // 直播
-    //tranformation_helpers_write_point_cloud(point_cloud_image, color_image, count, 600, 1.0, matrix);
-    auto time3 = std::chrono::high_resolution_clock::now();
-    auto duration2 = std::chrono::duration_cast<std::chrono::microseconds>(time3 - time2);
-
-    cout << "图像保存所用的时间（s）" << duration2.count() * 1.0 / 1000000 << endl;    
-    // 释放图像资源
-    k4a_image_release(transformed_depth_image);
-    k4a_image_release(point_cloud_image);
-}
-//line 188 与 line 421是重复的
+//void save_point_cloud_new(k4a_transformation_t transformation_handle,
+//    k4a::image depth_image1,
+//    k4a::image color_image1,
+//    //int count,
+//    //std::string matrix)
+//    // 点播的话把上面那一行去掉
+//    std::string file_name,
+//    std::string matrix)
+//{
+//    auto time1 = std::chrono::high_resolution_clock::now();
+//    //std::string file_name = output_dir + "\\depth_to_color.ply";
+//    //std::cout << file_name << std::endl;
+//    //将k4a::image转换到k4a_image_t
+//    k4a_image_t color_image;
+//    k4a_image_t depth_image;
+//    color_image = color_image1.handle();
+//    depth_image = depth_image1.handle();
+//    cout << "save_point_cloud_new" << endl;
+//    std::cout << "matrix is: " << matrix << std::endl;
+//
+//    // transform color image into depth camera geometry
+//    // 获取彩色图像的宽度和高度
+//    int color_image_width_pixels = k4a_image_get_width_pixels(color_image);
+//    int color_image_height_pixels = k4a_image_get_height_pixels(color_image);
+//
+//    // 创建用于保存转换后深度图像的图像对象
+//    k4a_image_t transformed_depth_image = NULL;
+//    if (K4A_RESULT_SUCCEEDED != k4a_image_create(K4A_IMAGE_FORMAT_DEPTH16,
+//        color_image_width_pixels,
+//        color_image_height_pixels,
+//        color_image_width_pixels * (int)sizeof(uint16_t),
+//        &transformed_depth_image))
+//    {
+//        printf("Failed to create transformed depth image\n");
+//    }
+//
+//    // 创建用于保存点云数据的图像对象
+//    k4a_image_t point_cloud_image = NULL;
+//    if (K4A_RESULT_SUCCEEDED != k4a_image_create(K4A_IMAGE_FORMAT_CUSTOM,
+//        color_image_width_pixels,
+//        color_image_height_pixels,
+//        color_image_width_pixels * 3 * (int)sizeof(int16_t),
+//        &point_cloud_image))
+//    {
+//        printf("Failed to create point cloud image\n");
+//    }
+//
+//    // 将深度图像转换为与彩色图像对齐的深度图像
+//    if (K4A_RESULT_SUCCEEDED !=
+//        k4a_transformation_depth_image_to_color_camera(transformation_handle, depth_image, transformed_depth_image))
+//    {
+//        printf("Failed to compute transformed depth image\n");
+//    }
+//
+//    // 使用转换后的深度图像计算点云数据，校准类型为彩色图像
+//    if (K4A_RESULT_SUCCEEDED != k4a_transformation_depth_image_to_point_cloud(transformation_handle,
+//        transformed_depth_image,
+//        K4A_CALIBRATION_TYPE_COLOR,
+//        point_cloud_image))
+//    {
+//        printf("Failed to compute point cloud\n");
+//    }
+//    auto time2 = std::chrono::high_resolution_clock::now();
+//    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(time2 - time1);
+//    cout << "图像处理所用的时间（s）" << duration.count() * 1.0 / 1000000 << endl;
+//
+//    // 将点云数据和彩色图像保存到文件中
+//    // 点播 
+//    tranformation_helpers_write_point_cloud(point_cloud_image, color_image, file_name.c_str(), 1000, 1.0, matrix);
+//    // 直播
+//    //tranformation_helpers_write_point_cloud(point_cloud_image, color_image, count, 600, 1.0, matrix);
+//    auto time3 = std::chrono::high_resolution_clock::now();
+//    auto duration2 = std::chrono::duration_cast<std::chrono::microseconds>(time3 - time2);
+//
+//    cout << "图像保存所用的时间（s）" << duration2.count() * 1.0 / 1000000 << endl;    
+//    // 释放图像资源
+//    k4a_image_release(transformed_depth_image);
+//    k4a_image_release(point_cloud_image);
+//}
+////line 188 与 line 421是重复的
