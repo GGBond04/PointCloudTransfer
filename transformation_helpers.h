@@ -9,14 +9,12 @@
 struct WritePointCloudData {
     const k4a_image_t point_cloud_image;
     const k4a_image_t color_image;
-    const char* file_name;
-    float distance_threshold;
-    float leaf_size;
     const std::string& matrix_file;
 };
 
 // 以下是点播
-void tranformation_helpers_write_point_cloud(std::vector<WritePointCloudData>& WritePCD);
+void tranformation_helpers_write_point_cloud(std::vector<WritePointCloudData>& WritePCD, 
+    const char* file_name, float distance_threshold);
 
 //void tranformation_helpers_write_point_cloud(const k4a_image_t point_cloud_image,
 //    const k4a_image_t color_image,

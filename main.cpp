@@ -32,12 +32,11 @@ struct PointCloudData {
     k4a_transformation_t transformation_handle;
     k4a::image depth_image;
     k4a::image color_image;
-    std::string file_name;
     std::string matrix_file;
     int count;
 };
 
-void save_point_cloud_new(std::vector<PointCloudData>& point_clouds);
+void save_point_cloud_new(std::vector<PointCloudData>& point_clouds, std::string file_name);
 
 //void save_point_cloud_new(k4a_transformation_t transformation_handle,
 //    k4a::image depth_image,
@@ -158,7 +157,6 @@ int main(int argc, char** argv)
         while (std::chrono::duration<double>(std::chrono::system_clock::now() - start_time).count() <
             greenscreen_duration)
         {
-
             // pointcloud 定义输出点云文件的目录
             std::string outputDirectory0 = "E:\\code\\kinect\\greenScreen\\ply1";
 
@@ -177,10 +175,10 @@ int main(int argc, char** argv)
             std::vector<PointCloudData> point_clouds;
 
             // 填充 point_clouds 数组
-            point_clouds.push_back({ transformation_handle_main, main_depth_image, main_color_image, filename, ""});
+            point_clouds.push_back({ transformation_handle_main, main_depth_image, main_color_image, ""});
 
             // 点播
-            save_point_cloud_new(point_clouds);
+            save_point_cloud_new(point_clouds, filename);
 
             //直播
             //save_point_cloud_new(transformation_handle_main, main_depth_image, main_color_image, count);
@@ -215,7 +213,7 @@ int main(int argc, char** argv)
             greenscreen_duration)
         {
             // pointcloud 定义输出点云文件的目录
-            std::string outputDirectory0 = "pointcloud/capture";
+            std::string outputDirectory = "pointcloud/capture";
 
             // 获取同步的捕获帧
             vector<k4a::capture> captures = capturer.get_synchronized_captures(secondary_config, true);
@@ -229,22 +227,22 @@ int main(int argc, char** argv)
             k4a::image secondary_color_image = captures[1].get_color_image();
 
             // 保存点云文件
-            std::string filename0 = outputDirectory0 + "\\" + std::to_string(count) + ".ply";
+            std::string filename = outputDirectory + "\\" + std::to_string(count) + ".ply";
 
             // 配准矩阵
-            std::string matrix1 = "D:\\Code\\kinect\\pointcloud\\capture2\\2to0_matrix.txt";
+            std::string matrix1 = "pointcloud/1to0_matrix.txt";
 
             // 合并保存
             std::vector<PointCloudData> point_clouds;
 
             // push back不花时间
             // 填充 point_clouds 数组
-            point_clouds.push_back({ transformation_handle_main, main_depth_image, main_color_image, filename0, "" });
-            point_clouds.push_back({ transformation_handle_second, secondary_depth_image, secondary_color_image, filename0, matrix1 });
+            point_clouds.push_back({ transformation_handle_main, main_depth_image, main_color_image, "" });
+            point_clouds.push_back({ transformation_handle_second, secondary_depth_image, secondary_color_image, matrix1 });
            
             auto start_time = std::chrono::high_resolution_clock::now();
 
-            save_point_cloud_new(point_clouds);
+            save_point_cloud_new(point_clouds, filename);
 
             // 记录结束时间点
             auto end_time = std::chrono::high_resolution_clock::now();      
@@ -283,9 +281,7 @@ int main(int argc, char** argv)
             time_t start = clock();    //获取开始的时间戳
 
             // 输出点云文件的相对路径  
-            std::string outputDirectory0 = "pointcloud/capture0";
-            std::string outputDirectory1 = "pointcloud/capture1";
-            std::string outputDirectory2 = "pointcloud/capture2";
+            std::string outputDirectory = "pointcloud/capture";
 
             // 获取同步的捕获帧
             vector<k4a::capture> captures;
@@ -304,22 +300,19 @@ int main(int argc, char** argv)
             k4a::image secondary_color_image_2 = captures[2].get_color_image();
 
             // 保存点云文件
-            std::string filename0 = outputDirectory0 + "\\" + std::to_string(count) + ".ply";
-            std::string filename1 = outputDirectory1 + "\\" + std::to_string(count) + ".ply";
-            std::string filename2 = outputDirectory2 + "\\" + std::to_string(count) + ".ply";
+            std::string filename = outputDirectory + "\\" + std::to_string(count) + ".ply";
             
             // 配准矩阵
-            std::string matrix1 = "D:\\Code\\kinect\\pointcloud\\capture1\\1to0_matrix.txt";
-            std::string matrix2 = "D:\\Code\\kinect\\pointcloud\\capture2\\2to0_matrix.txt";
-
-            std::vector<PointCloudData> point_clouds;
+            std::string matrix1 = "pointcloud/1to0_matrix.txt";
+            std::string matrix2 = "pointcloud/2to0_matrix.txt";
 
             // 填充 point_clouds 数组
-            point_clouds.push_back({ transformation_handle_main, main_depth_image, main_color_image, filename0, "" });
-            point_clouds.push_back({ transformation_handle_main, main_depth_image, main_color_image, filename0, matrix1 });
-            point_clouds.push_back({ transformation_handle_main, main_depth_image, main_color_image, filename0, matrix2 });
+            std::vector<PointCloudData> point_clouds;
+            point_clouds.push_back({ transformation_handle_main, main_depth_image, main_color_image, "" });
+            point_clouds.push_back({ transformation_handle_main, main_depth_image, main_color_image, matrix1 });
+            point_clouds.push_back({ transformation_handle_main, main_depth_image, main_color_image, matrix2 });
 
-            save_point_cloud_new(point_clouds); //空字符串
+            save_point_cloud_new(point_clouds, filename);
             count++;
             //break;
 
@@ -327,8 +320,6 @@ int main(int argc, char** argv)
             time_t end = clock();     //获取结束的时间戳 
             time_t run_time = end - start;  //运行时间=结束的时间戳-减去-开始的时间戳  
             cout << run_time << "ms" << endl;   //输出运行时间，单位是毫秒ms,  1秒=1000毫秒 
-
-
         }
     }
     else
@@ -382,7 +373,7 @@ static k4a_device_configuration_t get_subordinate_config()
     return camera_config;
 }
 
-void save_point_cloud_new(std::vector<PointCloudData>& point_clouds) {
+void save_point_cloud_new(std::vector<PointCloudData>& point_clouds, std::string file_name) {
 
     std::vector<WritePointCloudData> WritePCD;
 
@@ -433,11 +424,10 @@ void save_point_cloud_new(std::vector<PointCloudData>& point_clouds) {
         }
 
         // 填充 WritePCD 数组
-        WritePCD.push_back({ point_cloud_image, color_image, pcd.file_name.c_str(), 1000, 1.0, pcd.matrix_file });
+        WritePCD.push_back({ point_cloud_image, color_image, pcd.matrix_file });
     }
     
-    tranformation_helpers_write_point_cloud(WritePCD);
-
+    tranformation_helpers_write_point_cloud(WritePCD, file_name.c_str(), 1000);
 }
 
 
