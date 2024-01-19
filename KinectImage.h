@@ -13,7 +13,6 @@
 #include "yas/std_types.hpp"
 #include <winsock2.h>
 
-// 定义 color_point_t 结构体
 struct color_point_t {
     float xyz[3]; // XYZ 坐标
     int rgb[3]; // RGB 颜色
