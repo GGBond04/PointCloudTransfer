@@ -162,18 +162,26 @@ void tranformation_helpers_write_point_cloud(const k4a_image_t point_cloud_image
     int16_t* point_cloud_image_data = (int16_t*)(void*)k4a_image_get_buffer(point_cloud_image);
     uint8_t* color_image_data = k4a_image_get_buffer(color_image);
 
-    printf("save fig");
+    printf("save fig\n");
 
     // 初始化随机数生成器
     std::random_device rd;  // 随机数种子
     std::mt19937 gen(rd()); // 标准 mersenne_twister_engine
     std::uniform_real_distribution<> dis(0.0, 1.0);
 
+    
+    // 假设你有一个存储每行数据的 TensorList
+    //torch::TensorList rows;
+    //std::vector<torch::Tensor> rows;
+    //int cnt_tensor = 0;
+    auto start_time_1 = std::chrono::high_resolution_clock::now();//转换时间
     for (int i = 0; i < width * height; i++)
     {
-        //if (i % 5 == 0)
-        //    continue;
+        if (i % 5 == 0)
+            continue;
 
+        //torch::Tensor row_tensor = torch::empty({ 1, 6 }, torch::kFloat32);
+        float point_data[6];
         if (dis(gen) > 0.8) // 只处理大约60%的点
             continue;
 
@@ -181,6 +189,10 @@ void tranformation_helpers_write_point_cloud(const k4a_image_t point_cloud_image
         point.xyz[0] = point_cloud_image_data[3 * i + 0];
         point.xyz[1] = point_cloud_image_data[3 * i + 1];
         point.xyz[2] = point_cloud_image_data[3 * i + 2];
+
+       /* point_data[0]= point_cloud_image_data[3 * i + 0];
+        point_data[1] = point_cloud_image_data[3 * i + 1];
+        point_data[2] = point_cloud_image_data[3 * i + 2];*/
         if (point.xyz[2] == 0)
         {
             continue;
@@ -189,6 +201,10 @@ void tranformation_helpers_write_point_cloud(const k4a_image_t point_cloud_image
         point.rgb[0] = color_image_data[4 * i + 0];
         point.rgb[1] = color_image_data[4 * i + 1];
         point.rgb[2] = color_image_data[4 * i + 2];
+
+        /*point_data[3] = color_image_data[4 * i + 0];
+        point_data[4] = color_image_data[4 * i + 1];
+        point_data[5] = color_image_data[4 * i + 2];*/
         uint8_t alpha = color_image_data[4 * i + 3];
 
         if (point.rgb[0] == 0 && point.rgb[1] == 0 && point.rgb[2] == 0 && alpha == 0)
@@ -206,95 +222,144 @@ void tranformation_helpers_write_point_cloud(const k4a_image_t point_cloud_image
         /*if (i == 300000)
             break;*/
         points.push_back(point);
+        //torch::Tensor row_tensor = torch::from_blob(point_data, { 1, 6 }, torch::kFloat32).clone();
+        /*row_tensor[0] = (float)point.xyz[0];
+        row_tensor[1] = (float)point.xyz[1];
+        row_tensor[2] = (float)point.xyz[2];
+        row_tensor[3] = point.rgb[0];
+        row_tensor[4] = point.rgb[1];
+        row_tensor[5] = point.rgb[2];*/
+        //rows.push_back(row_tensor);
+        //std::cout << cnt_tensor << std::endl;
+        //cnt_tensor++;
     }
+    std::cout << "points2tensor begin" << std::endl;
+    //torch::Tensor matrix_tensor = torch::stack(rows);
+    
+    /*torch::Tensor matrix_tensor = torch::empty({ static_cast<long>(points.size()), 6 }, torch::kFloat32);
+    for (int i = 0;i < points.size();i++)
+    {
+        matrix_tensor[i][0] = points[i].xyz[0];
+        matrix_tensor[i][1] = points[i].xyz[1];
+        matrix_tensor[i][2] = points[i].xyz[2];
 
-    // 降采样
-    // 转换为PCL点云格式
-    //pcl::PointCloud<pcl::PointXYZRGB>::Ptr pcl_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
-    //for (const auto& point : points) {
-    //    pcl::PointXYZRGB pcl_point;
-    //    pcl_point.x = point.xyz[0];
-    //    pcl_point.y = point.xyz[1];
-    //    pcl_point.z = point.xyz[2];
-    //    pcl_point.r = static_cast<uint8_t>(point.rgb[2]);
-    //    pcl_point.g = static_cast<uint8_t>(point.rgb[1]);
-    //    pcl_point.b = static_cast<uint8_t>(point.rgb[0]);
-    //    pcl_cloud->push_back(pcl_point);
+        matrix_tensor[i][3] = static_cast<float>(points[i].rgb[0]);
+        matrix_tensor[i][4] = static_cast<float>(points[i].rgb[1]);
+        matrix_tensor[i][5] = static_cast<float>(points[i].rgb[2]);
+    }*/
+    // 创建一个张量，直接从 points 中的数据中获取
+    torch::Tensor matrix_tensor = torch::from_blob(points.data(), { static_cast<long>(points.size()), 6 }, torch::kFloat32);
+
+    std::cout << "points2tensor done" << std::endl;
+
+    //for (int i = 0; i < std::min(5, static_cast<int>(points.size())); ++i) {
+    //    std::cout << "Row " << i << ": ";
+    //    for (int j = 0; j < 3; ++j) {
+    //        std::cout << matrix_tensor[i][j].item<float>() << " ";
+    //    }
+    //    for (int j = 3; j < 6; ++j) {
+    //        std::cout << matrix_tensor[i][j].item<int>() << " ";
+    //    }
+    //    std::cout << "\n";
     //}
 
-    //auto start_time = std::chrono::high_resolution_clock::now();
-
-    //// 创建一个点云指针用于存储随机下采样的结果
-    //pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZRGB>);
-
-    //// 创建随机下采样滤波器对象
-    //pcl::RandomSample<pcl::PointXYZRGB> random_sampler;
-    //random_sampler.setInputCloud(pcl_cloud);     // 设置待滤波点云
-    //random_sampler.setSample(0.6 * width * height);  // 设置下采样点云的点数（例如200）
-    //// random_sampler.setSeed(1);                // （可选）获得相同的下采样结果
-
-    //// 应用随机下采样滤波
-    //random_sampler.filter(*cloud_filtered);
-
-    //// 记录结束时间点
-    //auto end_time = std::chrono::high_resolution_clock::now();      
-
-    //// 计算执行时间
-    //auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-
-    //// 打印执行时间（以毫秒为单位）
-    //std::cout << "随机下采样时间：" << duration.count() << " 毫秒" << std::endl;
-
-
-    //// 应用体素网格滤波器进行降采样
-    //pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZRGB>);
-    //pcl::VoxelGrid<pcl::PointXYZRGB> sor;
-    //sor.setInputCloud(pcl_cloud);
-    //sor.setLeafSize(leaf_size, leaf_size, leaf_size);
-    //sor.filter(*cloud_filtered);
-
-    //// 记录结束时间点
-    //auto end_time = std::chrono::high_resolution_clock::now();
-
-    //// 计算执行时间
-    //auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-
-    //// 打印执行时间（以毫秒为单位）
-    //std::cout << "Execution Time: " << duration.count() << " milliseconds" << std::endl;
-
-
-
+    auto start_time_2 = std::chrono::high_resolution_clock::now();  //乘法时间
+    //使用libtorch进行矩阵乘法运算
     if (matrix_file != "") {
-        auto start_time = std::chrono::high_resolution_clock::now();
+        torch::Tensor other_matrix = torch::randn({ 4, 4 });
 
-        printf("\n粗配准------\n");
-        // 读取变换矩阵
-        Eigen::Matrix4f transformation_matrix;
-        readMatrixFromFile(matrix_file, transformation_matrix);
+        // 截取前四列
+        torch::Tensor sub_matrix = matrix_tensor.index({ torch::indexing::Slice(torch::indexing::None, torch::indexing::None), torch::indexing::Slice(torch::indexing::None, 4) });
 
-        // 假设 points 是包含 color_point_t 结构的 std::vector
-        for (auto& point : points) {
-            // 创建一个4维向量，表示点的3D坐标
-            Eigen::Vector4f vec(point.xyz[0], point.xyz[1], point.xyz[2], 1.0f);
+        // 使用 mm 函数进行矩阵相乘
+        torch::Tensor result = torch::mm(sub_matrix, other_matrix);
 
-            // 应用变换矩阵
-            Eigen::Vector4f transformed_vec = transformation_matrix * vec;
+        // 更新原始张量的前三列（不更新第四列）
+        matrix_tensor.index_put_({ torch::indexing::Slice(torch::indexing::None, torch::indexing::None), torch::indexing::Slice(torch::indexing::None, 3) }, result.index({ torch::indexing::Slice(torch::indexing::None, torch::indexing::None), torch::indexing::Slice(torch::indexing::None, 3) }));
 
-            // 更新点的坐标
-            point.xyz[0] = transformed_vec[0];
-            point.xyz[1] = transformed_vec[1];
-            point.xyz[2] = transformed_vec[2];
+        auto start_time_3 = std::chrono::high_resolution_clock::now();  //写入时间
+        
+                                                                        // 打开二进制文件
+        std::ofstream ply_file(file_name, std::ios::binary);
+
+        // 写入 PLY 文件头
+        ply_file << "ply\n";
+        ply_file << "format binary_little_endian 1.0\n";
+        ply_file << "element vertex " << matrix_tensor.size(0) << "\n";
+        ply_file << "property float x\n";
+        ply_file << "property float y\n";
+        ply_file << "property float z\n";
+        ply_file << "property uchar red\n";
+        ply_file << "property uchar green\n";
+        ply_file << "property uchar blue\n";
+        ply_file << "end_header\n";
+
+         //写入点云数据（二进制格式）
+        auto data_accessor = matrix_tensor.accessor<float, 2>();
+        for (int i = 0; i < matrix_tensor.size(0); ++i) {
+            for (int j = 0; j < 3; ++j) {
+                float value = data_accessor[i][j];
+                ply_file.write(reinterpret_cast<char*>(&value), sizeof(float));
+            }
+            for (int j = 3; j < 6; ++j) {
+                uint8_t value = static_cast<uint8_t>(data_accessor[i][j]);
+                ply_file.write(reinterpret_cast<char*>(&value), sizeof(uint8_t));
+            }
         }
 
+        //// 获取张量前三列的 float 视图
+        //auto float_view = matrix_tensor.narrow(1, 0, 3).to(torch::kFloat32);
+
+        //// 直接写入 float 数据
+        //ply_file.write(reinterpret_cast<const char*>(float_view.data_ptr<float>()), float_view.numel() * sizeof(float));
+
+        //// 获取张量后三列的 int 视图
+        //auto int_view = matrix_tensor.narrow(1, 3, 3).to(torch::kInt32);
+
+        //// 直接写入 int 数据
+        //ply_file.write(reinterpret_cast<const char*>(int_view.data_ptr<int>()), int_view.numel() * sizeof(int));
+
+        //关闭文件
+        ply_file.close();
 
         // 记录结束时间点
         auto end_time = std::chrono::high_resolution_clock::now();
 
         // 计算执行时间
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-
+        auto duration_1 = std::chrono::duration_cast<std::chrono::milliseconds>(start_time_2 - start_time_1);
+        std::cout << "image2tensor时间: " << duration_1.count() << "毫秒" << std::endl;
+        auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(start_time_3 - start_time_2);
+        std::cout << "矩阵乘法时间: " << duration_2.count() << "毫秒" << std::endl;
+        auto duration_3 = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time_3);
         // 打印执行时间（以毫秒为单位）
-        std::cout << "粗配准时间: " << duration.count() << "毫秒" << std::endl;
+        std::cout << "写入ply时间: " << duration_3.count() << "毫秒" << std::endl;
+    }
+    std::cout << "文件写入完成" << std::endl;
+
+    //if (matrix_file != "") {
+    //    auto start_time = std::chrono::high_resolution_clock::now();
+
+    //    printf("\n粗配准------\n");
+    //    // 读取变换矩阵
+    //    Eigen::Matrix4f transformation_matrix;
+    //    readMatrixFromFile(matrix_file, transformation_matrix);
+
+    //    // 假设 points 是包含 color_point_t 结构的 std::vector
+    //    for (auto& point : points) {
+    //        // 创建一个4维向量，表示点的3D坐标
+    //        Eigen::Vector4f vec(point.xyz[0], point.xyz[1], point.xyz[2], 1.0f);
+
+    //        // 应用变换矩阵
+    //        Eigen::Vector4f transformed_vec = transformation_matrix * vec;
+
+    //        // 更新点的坐标
+    //        point.xyz[0] = transformed_vec[0];
+    //        point.xyz[1] = transformed_vec[1];
+    //        point.xyz[2] = transformed_vec[2];
+    //    }
+
+
+        
 
         //std::cout << "Transformation Matrix:" << std::endl;
         //for (int i = 0; i < transformation_matrix.rows(); ++i) {
@@ -312,7 +377,7 @@ void tranformation_helpers_write_point_cloud(const k4a_image_t point_cloud_image
         //pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
         //pcl::transformPointCloud(*cloud_filtered, *transformed_cloud, transformation_matrix);
         //pcl::PointCloud<pcl::PointXYZRGB>::Ptr aligned_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
-    }
+    //}
 
     //// icp算法配准
 
@@ -333,40 +398,40 @@ void tranformation_helpers_write_point_cloud(const k4a_image_t point_cloud_image
     //// 打印执行时间（以毫秒为单位）
     //std::cout << "随机下采样保存时间：" << duration.count() << " 毫秒" << std::endl;
 
-    auto start_time = std::chrono::high_resolution_clock::now();
-    std::cout << "开始存储" << std::endl;
-    std::ofstream plyFile(file_name, std::ios::binary);
+    //auto start_time = std::chrono::high_resolution_clock::now();
+    //std::cout << "开始存储" << std::endl;
+    //std::ofstream plyFile(file_name, std::ios::binary);
 
-    if (!plyFile.is_open()) {
-        std::cerr << "无法打开文件：" << file_name << std::endl;
-        return;
-    }
+    //if (!plyFile.is_open()) {
+    //    std::cerr << "无法打开文件：" << file_name << std::endl;
+    //    return;
+    //}
 
-    // 写入PLY文件头部
-    plyFile << "ply\n";
-    plyFile << "format binary_little_endian 1.0\n";
-    plyFile << "element vertex " << points.size() << "\n";
-    plyFile << "property float x\n";
-    plyFile << "property float y\n";
-    plyFile << "property float z\n";
-    plyFile << "property int blue\n";
-    plyFile << "property int green\n";
-    plyFile << "property int red\n";
-    plyFile << "end_header\n";
+    //// 写入PLY文件头部
+    //plyFile << "ply\n";
+    //plyFile << "format binary_little_endian 1.0\n";
+    //plyFile << "element vertex " << points.size() << "\n";
+    //plyFile << "property float x\n";
+    //plyFile << "property float y\n";
+    //plyFile << "property float z\n";
+    //plyFile << "property int blue\n";
+    //plyFile << "property int green\n";
+    //plyFile << "property int red\n";
+    //plyFile << "end_header\n";
 
-    // 写入二进制点云数据
-    plyFile.write(reinterpret_cast<const char*>(points.data()), points.size() * sizeof(color_point_t));
+    //// 写入二进制点云数据
+    //plyFile.write(reinterpret_cast<const char*>(points.data()), points.size() * sizeof(color_point_t));
 
-    plyFile.close();
+    //plyFile.close();
 
-    // 记录结束时间点
-    auto end_time = std::chrono::high_resolution_clock::now();
+    //// 记录结束时间点
+    //auto end_time = std::chrono::high_resolution_clock::now();
 
-    // 计算执行时间
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+    //// 计算执行时间
+    //auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 
-    // 打印执行时间（以毫秒为单位）
-    std::cout << "保存时间: " << duration.count() << "毫秒" << std::endl;
+    //// 打印执行时间（以毫秒为单位）
+    //std::cout << "保存时间: " << duration.count() << "毫秒" << std::endl;
 }
 
 k4a_image_t downscale_image_2x2_binning(const k4a_image_t color_image)
